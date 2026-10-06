@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pareamento por passkey</title>
+  <style>
+    body { width: 340px; margin: 0; padding: 16px; color: #17211b; font: 14px system-ui, sans-serif; }
+    h1 { margin: 0 0 12px; font-size: 18px; }
+    label { display: block; margin: 10px 0 4px; font-weight: 600; }
+    input { box-sizing: border-box; width: 100%; padding: 8px; border: 1px solid #aebbb2; border-radius: 6px; }
+    button { width: 100%; margin-top: 10px; padding: 9px; border: 0; border-radius: 6px; background: #087c52; color: white; font-weight: 650; cursor: pointer; }
+    button.secondary { background: #354b40; }
+    button:disabled { opacity: .55; cursor: wait; }
+    #status { min-height: 38px; margin-top: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    #confirmPanel { display: none; margin-top: 12px; padding-top: 10px; border-top: 1px solid #d5ded8; }
+    .hint { color: #4d5c53; font-size: 12px; line-height: 1.4; }
+  </style>
+</head>
+<body>
+  <h1>Pareamento por passkey</h1>
+  <label for="api">Endereço da API</label>
+  <input id="api" value="http://127.0.0.1:8080" autocomplete="url">
+  <label for="token">Token da API</label>
+  <input id="token" type="password" autocomplete="off">
+  <label for="session">ID da sessão</label>
+  <input id="session" autocomplete="off" placeholder="conta-a">
+  <p class="hint">Use apenas com uma API local confiável e com sua própria conta WhatsApp. O token fica somente aberto nesta janela.</p>
+  <button id="load">Buscar desafio</button>
+  <button id="use" class="secondary" disabled>Usar passkey no WhatsApp Web</button>
+  <button id="check" class="secondary">Consultar confirmação</button>
+  <div id="confirmPanel">
+    <p>Compare este código com o exibido no WhatsApp do titular:</p>
+    <strong id="code"></strong>
+    <label for="typedCode">Digite o código que você conferiu</label>
+    <input id="typedCode" autocomplete="off">
+    <button id="confirm">Confirmar pareamento</button>
+  </div>
+  <div id="status" role="status" aria-live="polite"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

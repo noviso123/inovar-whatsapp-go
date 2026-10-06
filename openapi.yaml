@@ -1,0 +1,363 @@
+openapi: 3.1.0
+info:
+  title: WhatsApp Go API
+  version: 0.1.0
+  description: API experimental não oficial construída com whatsmeow.
+servers:
+  - url: http://127.0.0.1:8080
+security:
+  - bearerAuth: []
+paths:
+  /:
+    get:
+      security: []
+      summary: Painel web local
+      description: Página HTML estática para gerenciar sessões; as chamadas da página usam o bearer token informado nela.
+      responses:
+        '200':
+          description: Painel local
+          content:
+            text/html:
+              schema: { type: string }
+  /healthz:
+    get:
+      security: []
+      responses:
+        '200': { description: Processo ativo }
+  /readyz:
+    get:
+      security: []
+      responses:
+        '200': { description: Banco disponível }
+        '503': { description: Banco indisponível }
+  /v1/sessions:
+    get:
+      responses:
+        '200':
+          description: Lista todas as sessões; cada item inclui id, status e account (JID após pareamento)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [id, status, account]
+                  properties:
+                    id: { type: string }
+                    status: { type: string, description: Inclui estados como connected, reconnecting, logged_out, temporarily_banned, client_outdated, stream_replaced e connection_failed }
+                    account: { type: string, description: JID da conta WhatsApp pareada; vazio antes do pareamento }
+                    pairing_method: { type: string, enum: [qr, phone, ""], description: Método do código de pareamento temporário, se houver }
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { id: { type: string, maxLength: 64 } }
+      responses:
+        '201': { description: Sessão criada }
+        '409': { description: Identificador em uso }
+  /v1/sessions/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      responses:
+        '200':
+          description: Estado e conta WhatsApp vinculada a esta sessão
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, status, account]
+                properties:
+                  id: { type: string }
+                  status: { type: string, description: Inclui estados como connected, reconnecting, logged_out, temporarily_banned, client_outdated, stream_replaced e connection_failed }
+                  account: { type: string, description: JID da conta WhatsApp pareada; vazio antes do pareamento }
+                  pairing_method: { type: string, enum: [qr, phone, ""], description: Método do código de pareamento temporário, se houver }
+        '404': { description: Sessão inexistente }
+    delete:
+      responses:
+        '204': { description: Sessão removida e credenciais eliminadas }
+  /v1/sessions/{id}/connect:
+    post:
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Sessão já autenticada }
+        '202': { description: Estado atual da conexão, do pareamento ou do fluxo passkey }
+        '409': { description: Pareamento indisponível }
+  /v1/sessions/{id}/pair:
+    post:
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties: { phone: { type: string, description: Número internacional em formato E.164 } }
+      responses:
+        '200':
+          description: Código temporário para vincular o dispositivo pelo número no WhatsApp; não é um SMS/OTP
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code]
+                properties: { code: { type: string, description: Digitar imediatamente no fluxo de vincular dispositivo por número do WhatsApp } }
+        '409': { description: Sessão desconectada, já autenticada ou ocupada por uma etapa passkey }
+  /v1/sessions/{id}/pairing:
+    get:
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: format, in: query, required: false, schema: { type: string, enum: [png] }, description: Use png para receber a imagem QR; sem parâmetro retorna JSON com o conteúdo do QR }
+      responses:
+        '200':
+          description: Conteúdo QR temporário em JSON ou imagem PNG (Cache-Control no-store)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code, method]
+                properties:
+                  code: { type: string }
+                  method: { type: string, enum: [qr, phone] }
+            image/png:
+              schema: { type: string, format: binary }
+        '404': { description: Sem código atual }
+        '409': { description: O código atual é de telefone e não pode ser renderizado como QR }
+  /v1/sessions/{id}/passkey:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Retorna desafio WebAuthn temporário
+      description: Requer que um cliente de navegador execute a cerimônia com o autenticador do titular e respeite o relying party indicado pelo desafio.
+      responses:
+        '200':
+          description: Desafio WebAuthn atual
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [public_key]
+                properties: { public_key: { type: object, additionalProperties: true } }
+        '404': { description: Nenhum desafio pendente }
+    post:
+      summary: Encaminha a asserção produzida pelo autenticador
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, response]
+              properties:
+                id: { type: string }
+                rawId: { type: string }
+                type: { type: string, const: public-key }
+                response: { type: object, additionalProperties: true }
+                authenticatorAttachment: { type: string }
+                clientExtensionResults: { type: object, additionalProperties: true }
+      responses:
+        '202': { description: Asserção aceita para processamento; aguarde os eventos da sessão }
+        '400': { description: Resposta WebAuthn inválida }
+        '502': { description: WhatsApp recusou a resposta }
+  /v1/sessions/{id}/passkey/confirmation:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Consulta código temporário de confirmação
+      description: Exiba o código ao titular para comparação manual com o código apresentado no WhatsApp.
+      responses:
+        '200':
+          description: Código de confirmação pendente, sem cache
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code, confirmation_required]
+                properties:
+                  code: { type: string }
+                  confirmation_required: { type: boolean }
+        '404': { description: Sem confirmação pendente }
+    post:
+      summary: Confirma após conferência humana do código
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, confirm]
+              properties:
+                code: { type: string }
+                confirm: { type: boolean, const: true }
+      responses:
+        '202': { description: Confirmação enviada ao WhatsApp }
+        '400': { description: Código divergente ou confirmação ausente }
+        '409': { description: Confirmação manual não está pendente }
+  /v1/sessions/{id}/disconnect:
+    post:
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Sessão desconectada; credenciais mantidas }
+  /v1/sessions/{id}/messages:
+    post:
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to, text]
+              properties:
+                to: { type: string, description: JID de usuário ou grupo }
+                text: { type: string, minLength: 1, maxLength: 65536 }
+      responses:
+        '202': { description: Mensagem enviada }
+        '400': { description: Entrada inválida }
+        '409': { description: Sessão desconectada }
+  /v1/sessions/{id}/messages/{message_id}/read:
+    post:
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: message_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [chat]
+              properties: { chat: { type: string } }
+      responses:
+        '204': { description: Leitura confirmada }
+  /v1/sessions/{id}/presence:
+    post:
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state]
+              properties:
+                state: { type: string, enum: [typing, recording, paused] }
+                chat: { type: string }
+      responses:
+        '204': { description: Presença atualizada }
+  /v1/sessions/{id}/contacts:
+    get:
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Contatos encontrados no cache local }
+  /v1/sessions/{id}/groups:
+    get:
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Grupos associados à sessão }
+        '409': { description: Sessão não conectada }
+  /v1/sessions/{id}/chats/{jid}/settings:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+      - { name: jid, in: path, required: true, schema: { type: string, description: JID percent-encoded } }
+    get:
+      responses:
+        '200': { description: Preferências locais do chat }
+    patch:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                archived: { type: boolean }
+                pinned: { type: boolean }
+                muted_until: { type: string, description: Timestamp RFC3339 ou string vazia para remover o silêncio }
+      responses:
+        '200': { description: Preferências atualizadas }
+        '400': { description: JID ou preferência inválida }
+  /v1/sessions/{id}/chats:
+    get:
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Conversas com última mensagem e contagem }
+  /v1/sessions/{id}/chats/{jid}:
+    get:
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: jid, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Histórico de mensagens da conversa, com from_me, texto, tipo de mídia e timestamp }
+        '400': { description: JID inválido }
+  /v1/sessions/{id}/products:
+    get:
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Produtos do catálogo local }
+    post:
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                price: { type: string, example: '79.90' }
+                sku: { type: string }
+                description: { type: string }
+                image_url: { type: string, format: uri }
+                currency: { type: string, example: BRL }
+      responses:
+        '201': { description: Produto criado }
+        '400': { description: Dados inválidos }
+  /v1/sessions/{id}/products/{product_id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+      - { name: product_id, in: path, required: true, schema: { type: string } }
+    patch:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, minProperties: 1 }
+      responses:
+        '200': { description: Produto atualizado }
+        '404': { description: Produto inexistente }
+    delete:
+      responses:
+        '204': { description: Produto excluído }
+        '404': { description: Produto inexistente }
+  /v1/media/{filename}:
+    get:
+      parameters:
+        - { name: filename, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Conteúdo de anexo recebido }
+        '404': { description: Arquivo inexistente }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer

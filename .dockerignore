@@ -1,0 +1,6 @@
+.env
+data/
+.git/
+*.db
+*.db-shm
+*.db-wal

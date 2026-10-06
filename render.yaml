@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: inovar-whatsapp-go
+    runtime: docker
+    plan: free
+    region: ohio
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /readyz
+    autoDeploy: true
+    envVars:
+      - key: API_TOKEN
+        sync: false
+      - key: DATABASE_DSN
+        sync: false
+      - key: PANEL_AUTO_TOKEN
+        value: "false"
+      - key: MAX_MEDIA_BYTES
+        value: "16777216"

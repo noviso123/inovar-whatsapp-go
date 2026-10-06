@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "WhatsApp Go API Passkey Bridge",
+  "version": "1.0.0",
+  "description": "Encaminha um desafio de pareamento da API para o autenticador do titular no WhatsApp Web.",
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": [
+    "http://127.0.0.1:8080/*",
+    "https://web.whatsapp.com/*"
+  ],
+  "action": {
+    "default_title": "Pareamento por passkey",
+    "default_popup": "popup.html"
+  }
+}
